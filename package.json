@@ -1,0 +1,19 @@
+{
+  "name": "inspection-ai",
+  "version": "1.0.0",
+  "private": true,
+  "description": "YOLO inspection web application with a Node.js backend",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "dependencies": {
+    "busboy": "^1.6.0",
+    "pdfkit": "^0.17.2",
+    "yauzl": "^3.2.0"
+  }
+}
