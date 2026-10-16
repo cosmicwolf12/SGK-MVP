@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f6f8fb">
+  <title>Inspection AI · Контроль состояния</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script defer src="/static/app.js"></script>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="#statistics" aria-label="На главную">
+        <span class="brand-mark">◈</span><span>Инспекция</span>
+      </a>
+      <div class="nav-caption">РАБОЧЕЕ ПРОСТРАНСТВО</div>
+      <nav class="nav-list" aria-label="Основная навигация">
+        <button class="nav-item active" data-page="statistics"><span class="nav-icon">▦</span>Статистика</button>
+        <button class="nav-item" data-page="map"><span class="nav-icon">⌖</span>Интерактивная карта</button>
+        <button class="nav-item" data-page="upload"><span class="nav-icon">⇧</span>Загрузка видео</button>
+        <button class="nav-item" data-page="logs"><span class="nav-icon">≋</span>Логи обнаружения</button>
+        <button class="nav-item" data-page="reports"><span class="nav-icon">▤</span>Отчёты</button>
+      </nav>
+      <div class="sidebar-bottom">
+        <span class="online-dot"></span>
+        <div><strong>Модель YOLO</strong><small>Готова к анализу</small></div>
+      </div>
+    </aside>
+
+    <main class="main-area">
+      <header class="topbar">
+        <div class="breadcrumbs"><span>МОНИТОРИНГ</span><i>/</i><strong id="breadcrumb-current">СТАТИСТИКА</strong></div>
+        <div class="system-status"><span class="online-dot"></span>СИСТЕМА АКТИВНА</div>
+      </header>
+      <div id="toast-region" class="toast-region" aria-live="polite"></div>
+      <section id="page-content" class="page-content" aria-live="polite"></section>
+    </main>
+  </div>
+</body>
+</html>
