@@ -21,6 +21,7 @@ from training_utils import (
     training_root,
     write_json_atomic,
 )
+from training_environment import get_training_environment
 
 st.set_page_config(
     page_title="Дообучение модели · Inspection AI",
@@ -79,6 +80,31 @@ st.warning(
     "Распаковка ограничена 50 ГБ."
 )
 
+training_environment = get_training_environment()
+if not training_environment["torch_available"]:
+    st.error(
+        "PyTorch не установлен или не загружается в текущем Python. "
+        "Установите зависимости командой `py -3 -m pip install -r requirements.txt`."
+    )
+elif training_environment["cuda_available"]:
+    gpu_list = ", ".join(
+        f"GPU {device['index']}: {device['name']}"
+        for device in training_environment["devices"]
+    )
+    st.success(f"Обнаружен PyTorch {training_environment['torch_version']} с CUDA. {gpu_list}")
+elif training_environment["nvidia_detected"]:
+    st.warning(
+        f"Найдена видеокарта NVIDIA ({training_environment['nvidia_details']}), "
+        f"но текущая сборка PyTorch {training_environment['torch_version']} не видит CUDA. "
+        "Обучение автоматически переключится на CPU. Для GPU установите подходящую "
+        "[сборку PyTorch](https://pytorch.org/get-started/locally/)."
+    )
+else:
+    cpu_message = f"CUDA-видеокарта не обнаружена. Будет использоваться CPU (PyTorch {training_environment['torch_version']})."
+    if training_environment["error"]:
+        cpu_message += f" Проверка CUDA: {training_environment['error']}"
+    st.info(cpu_message)
+
 with st.form("training-form", clear_on_submit=False):
     st.subheader("1. Датасет и базовая модель")
     dataset_file = st.file_uploader(
@@ -121,7 +147,12 @@ with st.form("training-form", clear_on_submit=False):
         batch_size = st.selectbox("Размер batch", options=[-1, 2, 4, 8, 16, 32], index=0,
                                   format_func=lambda value: "Авто" if value == -1 else str(value))
     with column_d:
-        device = st.selectbox("Устройство", ["Авто", "CPU", "GPU 0"], index=0)
+        device_options = ["Авто (GPU если доступен, иначе CPU)", "CPU"]
+        device_options.extend(
+            f"GPU {device['index']}: {device['name']}"
+            for device in training_environment["devices"]
+        )
+        device = st.selectbox("Устройство", device_options, index=0)
 
     submitted = st.form_submit_button("Проверить датасет и запустить обучение", type="primary")
 
@@ -211,7 +242,11 @@ if submitted:
                     "imgsz": int(image_size),
                     "batch": int(batch_size),
                     "workers": 0,
-                    "device": {"Авто": None, "CPU": "cpu", "GPU 0": "0"}[device],
+                    "device": (
+                        "auto" if device.startswith("Авто")
+                        else "cpu" if device == "CPU"
+                        else device.split(":", 1)[0].replace("GPU ", "")
+                    ),
                     "project": str(run_dir),
                     "run_name": run_name,
                     "status_path": str(status_path),
@@ -307,6 +342,10 @@ if active_job and active_job.get("status_path"):
             st.json(status["metrics"], expanded=False)
         if status.get("error"):
             st.error(status["error"])
+        if status.get("device_used"):
+            st.caption(f"Фактически используется: {status['device_used']}")
+        if status.get("device_note"):
+            st.warning(status["device_note"])
         if status.get("best_model") and Path(status["best_model"]).is_file():
             best_model = Path(status["best_model"])
             st.success(f"Лучшая модель сохранена: {best_model}")

@@ -6,6 +6,7 @@ import time
 import traceback
 from pathlib import Path
 
+from training_environment import resolve_training_device
 from training_utils import read_json, write_json_atomic
 
 
@@ -18,15 +19,27 @@ def main(config_path: Path) -> int:
     status_path = Path(config["status_path"])
     cancel_path = Path(config["cancel_path"])
     log_path = Path(config["log_path"])
-    write_json_atomic(status_path, {
-        "status": "running",
-        "epoch": 0,
-        "epochs": config["epochs"],
-        "started_at": time.time(),
-    })
 
     try:
         from ultralytics import YOLO
+
+        requested_device = config.get("device")
+        device, device_note = resolve_training_device(requested_device)
+        device_info = {
+            "device_requested": requested_device or "auto",
+            "device_used": f"GPU {device}" if device.isdigit() else "CPU",
+            "device_note": device_note,
+        }
+        if device_note:
+            with log_path.open("a", encoding="utf-8") as log:
+                log.write(device_note + "\n")
+        write_json_atomic(status_path, {
+            "status": "running",
+            "epoch": 0,
+            "epochs": config["epochs"],
+            "started_at": time.time(),
+            **device_info,
+        })
 
         model = YOLO(config["checkpoint"])
 
@@ -51,6 +64,7 @@ def main(config_path: Path) -> int:
                     if isinstance(value, (int, float))
                 },
                 "updated_at": time.time(),
+                **device_info,
             })
 
         model.add_callback("on_train_epoch_end", on_epoch_end)
@@ -66,8 +80,7 @@ def main(config_path: Path) -> int:
             "plots": True,
             "verbose": True,
         }
-        if config.get("device") is not None:
-            train_args["device"] = config["device"]
+        train_args["device"] = device
 
         results = model.train(**train_args)
         if cancel_path.exists():
@@ -91,6 +104,7 @@ def main(config_path: Path) -> int:
                 key: float(value) for key, value in (getattr(trainer, "metrics", {}) or {}).items()
                 if isinstance(value, (int, float))
             } if trainer else {},
+            **device_info,
         })
         return 0
     except TrainingCancelled as error:

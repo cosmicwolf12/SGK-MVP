@@ -9,11 +9,52 @@ import zipfile
 from pathlib import Path
 from unittest.mock import patch
 
+import training_environment
 from training_utils import DatasetError, extract_coco_json_dataset, extract_yolo_dataset
 from training_worker import main as run_training
+from training_environment import resolve_training_device
 
 
 class DatasetValidationTests(unittest.TestCase):
+    def test_automatic_device_selection_uses_cpu_without_cuda(self):
+        fake_torch = types.SimpleNamespace(
+            __version__="test-cpu",
+            cuda=types.SimpleNamespace(
+                is_available=lambda: False,
+                device_count=lambda: 0,
+            ),
+        )
+        with patch.dict(sys.modules, {"torch": fake_torch}), \
+                patch.object(training_environment, "_detect_nvidia_smi", return_value=(False, None)):
+            self.assertEqual(resolve_training_device("auto"), ("cpu", None))
+
+    def test_unavailable_requested_gpu_falls_back_to_cpu(self):
+        fake_torch = types.SimpleNamespace(
+            __version__="test-cpu",
+            cuda=types.SimpleNamespace(
+                is_available=lambda: False,
+                device_count=lambda: 0,
+            ),
+        )
+        with patch.dict(sys.modules, {"torch": fake_torch}), \
+                patch.object(training_environment, "_detect_nvidia_smi", return_value=(True, "NVIDIA GPU")):
+            device, warning = resolve_training_device("0")
+        self.assertEqual(device, "cpu")
+        self.assertIn("продолжится на CPU", warning)
+
+    def test_automatic_device_selection_uses_available_gpu(self):
+        fake_torch = types.SimpleNamespace(
+            __version__="test-cuda",
+            cuda=types.SimpleNamespace(
+                is_available=lambda: True,
+                device_count=lambda: 1,
+                get_device_name=lambda _index: "Test GPU",
+            ),
+        )
+        with patch.dict(sys.modules, {"torch": fake_torch}), \
+                patch.object(training_environment, "_detect_nvidia_smi", return_value=(True, "Test GPU")):
+            self.assertEqual(resolve_training_device("auto"), ("0", None))
+
     def _make_dataset(self, root: Path, *, invalid_member: str | None = None, invalid_label: str | None = None):
         archive_path = root / "dataset.zip"
         with zipfile.ZipFile(archive_path, "w") as archive:
@@ -231,16 +272,19 @@ class DatasetValidationTests(unittest.TestCase):
                 best=str(checkpoint),
                 save_dir=str(root),
             )
+            fake_models = []
 
             class FakeYOLO:
                 def __init__(self, _checkpoint):
                     self.callbacks = {}
                     self.trainer = trainer
+                    fake_models.append(self)
 
                 def add_callback(self, event, callback):
                     self.callbacks[event] = callback
 
-                def train(self, **_kwargs):
+                def train(self, **kwargs):
+                    self.train_args = kwargs
                     self.callbacks["on_train_epoch_end"](trainer)
                     return object()
 
@@ -254,6 +298,7 @@ class DatasetValidationTests(unittest.TestCase):
                     "imgsz": 640,
                     "batch": -1,
                     "workers": 0,
+                    "device": "0",
                     "project": str(root),
                     "run_name": "test-run",
                     "status_path": str(status_path),
@@ -262,11 +307,23 @@ class DatasetValidationTests(unittest.TestCase):
                 }),
                 encoding="utf-8",
             )
-            with patch.dict(sys.modules, {"ultralytics": types.SimpleNamespace(YOLO=FakeYOLO)}):
+            fake_torch = types.SimpleNamespace(
+                __version__="test-cpu",
+                cuda=types.SimpleNamespace(
+                    is_available=lambda: False,
+                    device_count=lambda: 0,
+                ),
+            )
+            with patch.dict(sys.modules, {
+                "ultralytics": types.SimpleNamespace(YOLO=FakeYOLO),
+                "torch": fake_torch,
+            }), patch.object(training_environment, "_detect_nvidia_smi", return_value=(False, None)):
                 self.assertEqual(run_training(config_path), 0)
             status = json.loads(status_path.read_text(encoding="utf-8"))
             self.assertEqual(status["status"], "completed")
             self.assertEqual(status["best_model"], str(checkpoint))
+            self.assertEqual(status["device_used"], "CPU")
+            self.assertEqual(fake_models[0].train_args["device"], "cpu")
 
 
 if __name__ == "__main__":
