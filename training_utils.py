@@ -8,6 +8,7 @@ import random
 import re
 import shutil
 import stat
+import sys
 import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path, PurePosixPath
@@ -30,6 +31,10 @@ SPLIT_NAMES = {
 
 
 class DatasetError(ValueError):
+    pass
+
+
+class _MissingImageError(DatasetError):
     pass
 
 
@@ -295,7 +300,7 @@ def _resolve_image(root: Path, base: Path, name: str, image_index: dict[str, lis
             if len(split_matches) == 1:
                 return split_matches[0]
         raise DatasetError(f"Имя изображения неоднозначно, укажите относительный путь: {name}")
-    raise DatasetError(f"Не найден файл изображения из разметки: {name}")
+    raise _MissingImageError(f"Не найден файл изображения из разметки: {name}")
 
 
 def _read_image_index(root: Path) -> dict[str, list[Path]]:
@@ -344,7 +349,11 @@ def _add_record(
 
 
 def _parse_coco(
-    root: Path, json_files: list[Path], image_index: dict[str, list[Path]]
+    root: Path,
+    json_files: list[Path],
+    image_index: dict[str, list[Path]],
+    *,
+    skip_missing_images: bool = False,
 ) -> tuple[list[str], dict[Path, dict[str, Any]]]:
     category_names: dict[int, str] = {}
     parsed: list[tuple[Path, dict[str, Any], dict[int, str]]] = []
@@ -383,16 +392,26 @@ def _parse_coco(
                 width, height = float(image["width"]), float(image["height"])
             except (KeyError, TypeError, ValueError) as error:
                 raise DatasetError(f"Некорректное изображение COCO в {annotation_path.name}.") from error
-            image_path = _resolve_image(root, annotation_path.parent, name, image_index)
+            try:
+                image_path = _resolve_image(root, annotation_path.parent, name, image_index)
+            except _MissingImageError as error:
+                if not skip_missing_images:
+                    raise
+                print(f"Warning: image referenced by COCO JSON was skipped: {name}", file=sys.stderr)
+                continue
             image_records[image_id] = (image_path, width, height, [])
         hint = _split_hint(annotation_path.relative_to(root), _split_hint(Path(annotation_path.stem)))
         for annotation in data["annotations"]:
             try:
+                if int(annotation.get("iscrowd", 0)) == 1:
+                    continue
                 image_id = annotation["image_id"]
                 category_id = int(annotation["category_id"])
                 x, y, width, height = map(float, annotation["bbox"])
             except (KeyError, TypeError, ValueError) as error:
                 raise DatasetError(f"Некорректная рамка COCO в {annotation_path.name}.") from error
+            if image_id not in image_records and skip_missing_images:
+                continue
             if image_id not in image_records or category_id not in categories:
                 raise DatasetError(f"Рамка COCO ссылается на неизвестное изображение или категорию в {annotation_path.name}.")
             image_path, image_width, image_height, boxes = image_records[image_id]
@@ -717,6 +736,38 @@ def extract_yolo_dataset(archive_path: Path, destination: Path) -> dict[str, Any
         result = _validate_yolo_dataset(converted_root, converted_root, converted_root / "data.yaml")
         result.update(conversion_info)
         result["yaml_path"] = str(converted_root / "training-data.yaml")
+        return result
+    except Exception:
+        shutil.rmtree(destination, ignore_errors=True)
+        raise
+
+
+def extract_coco_json_dataset(
+    annotation_path: Path,
+    images_archive_path: Path,
+    destination: Path,
+) -> dict[str, Any]:
+    annotation_path = annotation_path.resolve()
+    if not annotation_path.is_file():
+        raise DatasetError("COCO JSON-файл не найден.")
+    if annotation_path.stat().st_size > MAX_ANNOTATION_BYTES:
+        raise DatasetError("COCO JSON превышает лимит 1 ГБ.")
+
+    root = _extract_archive(images_archive_path, destination)
+    try:
+        image_index = _read_image_index(root)
+        copied_annotation = root / "_uploaded_coco_annotations.json"
+        if copied_annotation.exists():
+            raise DatasetError("Архив изображений содержит зарезервированное имя файла разметки.")
+        shutil.copy2(annotation_path, copied_annotation)
+        names, records = _parse_coco(root, [copied_annotation], image_index, skip_missing_images=True)
+        converted_root = root / "converted-yolo"
+        converted_root.mkdir()
+        conversion_info = _convert_records_to_yolo(records, names, converted_root, "COCO JSON")
+        result = _validate_yolo_dataset(converted_root, converted_root, converted_root / "data.yaml")
+        result.update(conversion_info)
+        result["yaml_path"] = str(converted_root / "training-data.yaml")
+        result["source_format"] = "COCO JSON"
         return result
     except Exception:
         shutil.rmtree(destination, ignore_errors=True)

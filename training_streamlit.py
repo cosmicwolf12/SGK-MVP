@@ -15,6 +15,7 @@ from training_utils import (
     MAX_ARCHIVE_BYTES,
     MAX_CHECKPOINT_BYTES,
     DatasetError,
+    extract_coco_json_dataset,
     extract_yolo_dataset,
     read_json,
     training_root,
@@ -66,8 +67,11 @@ st.warning(
     "После обучения проверьте качество и вручную укажите полученный best.pt для инференса."
 )
 st.info(
-    "Загрузите ZIP с YOLO, COCO JSON, Pascal VOC XML, LabelMe JSON или CVAT XML. "
-    "Разметка будет автоматически преобразована в формат YOLO Detection."
+    "Можно загрузить готовый ZIP-датасет или отдельно COCO JSON и ZIP с изображениями, "
+    "на которые ссылается JSON. Для обычного ZIP также поддерживаются YOLO, COCO, "
+    "Pascal VOC, LabelMe и CVAT. Обучение сайта выполняется в режиме Detection: "
+    "для COCO используются bbox, сегментационные полигоны не обучаются. "
+    "Лимит COCO JSON — 1 ГБ."
 )
 st.warning(
     "Лимит одного файла — 10 ГБ. Streamlit временно держит загруженный файл в памяти, "
@@ -78,9 +82,19 @@ st.warning(
 with st.form("training-form", clear_on_submit=False):
     st.subheader("1. Датасет и базовая модель")
     dataset_file = st.file_uploader(
-        "Архив датасета (.zip)",
+        "Готовый датасет (.zip), необязательно если загружаете COCO отдельно",
         type=["zip"],
         help="Поддерживаются YOLO, COCO, Pascal VOC, LabelMe и CVAT. Лимит ZIP — 10 ГБ.",
+    )
+    coco_json_file = st.file_uploader(
+        "COCO-разметка (.json)",
+        type=["json"],
+        help="COCO JSON с массивами images, categories и annotations. Лимит файла — 1 ГБ.",
+    )
+    coco_images_file = st.file_uploader(
+        "ZIP с изображениями из COCO JSON",
+        type=["zip"],
+        help="Архив должен содержать изображения, имена/пути которых указаны в file_name. Лимит — 10 ГБ.",
     )
     checkpoint_file = st.file_uploader(
         "Базовые веса (.pt), необязательно",
@@ -112,10 +126,17 @@ with st.form("training-form", clear_on_submit=False):
     submitted = st.form_submit_button("Проверить датасет и запустить обучение", type="primary")
 
 if submitted:
-    if not dataset_file:
-        st.error("Сначала выберите ZIP-архив датасета.")
-    elif dataset_file.size > MAX_ARCHIVE_BYTES:
+    has_coco_upload = bool(coco_json_file or coco_images_file)
+    if bool(dataset_file) == has_coco_upload:
+        st.error("Загрузите либо один готовый ZIP-датасет, либо COCO JSON вместе с ZIP изображений.")
+    elif dataset_file and dataset_file.size > MAX_ARCHIVE_BYTES:
         st.error("ZIP-архив превышает лимит 10 ГБ.")
+    elif coco_json_file and coco_json_file.size > 1024 * 1024 * 1024:
+        st.error("COCO JSON превышает лимит 1 ГБ.")
+    elif coco_images_file and coco_images_file.size > MAX_ARCHIVE_BYTES:
+        st.error("ZIP изображений превышает лимит 10 ГБ.")
+    elif has_coco_upload and (not coco_json_file or not coco_images_file):
+        st.error("Для COCO загрузите и JSON-разметку, и ZIP с изображениями.")
     elif checkpoint_file and checkpoint_file.size > MAX_CHECKPOINT_BYTES:
         st.error("Файл модели превышает лимит 10 ГБ.")
     else:
@@ -147,11 +168,27 @@ if submitted:
                 job_id = uuid.uuid4().hex
                 job_dir = JOBS_ROOT / job_id
                 job_dir.mkdir(parents=True, exist_ok=False)
-                archive_path = job_dir / "dataset.zip"
-                dataset_file.seek(0)
-                with archive_path.open("wb") as archive_output:
-                    shutil.copyfileobj(dataset_file, archive_output, length=8 * 1024 * 1024)
-                dataset_info = extract_yolo_dataset(archive_path, job_dir / "dataset")
+                dataset_root = job_dir / "dataset"
+                if dataset_file:
+                    archive_path = job_dir / "dataset.zip"
+                    dataset_file.seek(0)
+                    with archive_path.open("wb") as archive_output:
+                        shutil.copyfileobj(dataset_file, archive_output, length=8 * 1024 * 1024)
+                    dataset_info = extract_yolo_dataset(archive_path, dataset_root)
+                else:
+                    annotation_path = job_dir / "annotations.json"
+                    coco_json_file.seek(0)
+                    with annotation_path.open("wb") as annotation_output:
+                        shutil.copyfileobj(coco_json_file, annotation_output, length=8 * 1024 * 1024)
+                    images_archive_path = job_dir / "coco-images.zip"
+                    coco_images_file.seek(0)
+                    with images_archive_path.open("wb") as images_output:
+                        shutil.copyfileobj(coco_images_file, images_output, length=8 * 1024 * 1024)
+                    dataset_info = extract_coco_json_dataset(
+                        annotation_path,
+                        images_archive_path,
+                        dataset_root,
+                    )
 
                 if checkpoint_file:
                     checkpoint = job_dir / "base-model.pt"

@@ -9,7 +9,7 @@ import zipfile
 from pathlib import Path
 from unittest.mock import patch
 
-from training_utils import DatasetError, extract_yolo_dataset
+from training_utils import DatasetError, extract_coco_json_dataset, extract_yolo_dataset
 from training_worker import main as run_training
 
 
@@ -61,6 +61,40 @@ class DatasetValidationTests(unittest.TestCase):
                 archive.writestr("data.yaml", "path: ../outside\ntrain: images/train\nval: images/val\nnames: [waste]\n")
             with self.assertRaisesRegex(DatasetError, "выходит за пределы"):
                 extract_yolo_dataset(archive_path, root / "extracted")
+
+    def test_accepts_coco_json_with_separate_images_archive(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            annotation_path = root / "annotations.json"
+            annotation_path.write_text(json.dumps({
+                "images": [
+                    {"id": 1, "file_name": "images/a.jpg", "width": 100, "height": 80},
+                    {"id": 2, "file_name": "images/b.jpg", "width": 100, "height": 80},
+                    {"id": 3, "file_name": "images/missing.jpg", "width": 100, "height": 80},
+                ],
+                "categories": [{"id": 1, "name": "waste"}],
+                "annotations": [
+                    {"id": 1, "image_id": 1, "category_id": 1, "bbox": [10, 8, 30, 20],
+                     "segmentation": [[10, 8, 40, 8, 40, 28]]},
+                    {"id": 2, "image_id": 2, "category_id": 1, "bbox": [20, 10, 20, 20]},
+                    {"id": 3, "image_id": 2, "category_id": 1, "iscrowd": 1, "bbox": [0, 0, 10, 10]},
+                    {"id": 4, "image_id": 3, "category_id": 1, "bbox": [0, 0, 10, 10]},
+                ],
+            }), encoding="utf-8")
+            images_archive = root / "images.zip"
+            with zipfile.ZipFile(images_archive, "w") as archive:
+                archive.writestr("images/a.jpg", b"a")
+                archive.writestr("images/b.jpg", b"b")
+
+            info = extract_coco_json_dataset(annotation_path, images_archive, root / "dataset")
+
+            self.assertEqual(info["source_format"], "COCO JSON")
+            self.assertEqual(info["train_images"], 1)
+            self.assertEqual(info["val_images"], 1)
+            self.assertEqual(info["labeled_boxes"], 2)
+            label_files = list((Path(info["dataset_root"]) / "labels").rglob("*.txt"))
+            self.assertEqual(len(label_files), 2)
+            self.assertTrue(all(len(label.read_text().strip().split()) == 5 for label in label_files))
 
     def _convert_format_archive(self, root: Path, file_format: str) -> dict:
         archive_path = root / f"{file_format}.zip"
