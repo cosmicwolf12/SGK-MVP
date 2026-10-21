@@ -31,6 +31,7 @@ button { cursor: pointer; }
 .nav-item { width: 100%; display: flex; align-items: center; gap: 10px; border: 0; border-radius: 7px; background: transparent; padding: 10px 9px; color: #66768d; text-align: left; font-size: 11px; font-weight: 700; transition: .15s ease; }
 .nav-item:hover { background: #f4f6f9; color: var(--ink); }
 .nav-item.active { background: var(--navy); color: #fff; }
+.nav-link { text-decoration: none; cursor: pointer; }
 .nav-icon { width: 16px; text-align: center; font-size: 15px; }
 .sidebar-bottom { margin-top: auto; padding: 12px 7px 4px; border-top: 1px solid var(--line); display: flex; align-items: center; gap: 9px; }
 .sidebar-bottom strong, .sidebar-bottom small { display: block; font-size: 10px; }

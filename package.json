@@ -6,6 +6,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
+    "start:training": "py -3 -m streamlit run training_streamlit.py --server.address 127.0.0.1 --server.port 8501 --server.maxUploadSize 10240 --server.maxMessageSize 10240 --server.headless true --browser.gatherUsageStats false",
     "test": "node --test"
   },
   "engines": {

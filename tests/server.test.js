@@ -84,6 +84,8 @@ test("serves the existing website and frontend assets", async () => {
   const html = await page.text();
   assert.match(html, /\/static\/app\.js/);
   assert.doesNotMatch(html, /url_for/);
+  assert.match(html, /href="http:\/\/127\.0\.0\.1:8501"/);
+  assert.match(html, /Дообучение модели/);
 
   const script = await fetchAuthorized(`${baseUrl}/static/app.js`);
   assert.equal(script.status, 200);
