@@ -39,6 +39,9 @@ const MAX_ARCHIVE_UNPACKED_BYTES = 2 * 1024 * 1024 * 1024;
 const MAX_ARCHIVE_IMAGE_BYTES = 128 * 1024 * 1024;
 const MAX_ARCHIVE_IMAGES = 5000;
 const MAX_JSON_BYTES = 2 * 1024 * 1024;
+const MAX_LOGIN_BODY_BYTES = 8 * 1024;
+const SESSION_COOKIE = "inspection_session";
+const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 const LOCAL_AUTH_CONFIG_PATH = path.join(ROOT, ".auth.local.json");
 const localAuthConfig = fs.existsSync(LOCAL_AUTH_CONFIG_PATH)
   ? JSON.parse(fs.readFileSync(LOCAL_AUTH_CONFIG_PATH, "utf8"))
@@ -53,6 +56,9 @@ if (
 const APP_USERNAME = process.env.APP_USERNAME || localAuthConfig.username || "";
 const APP_PASSWORD = process.env.APP_PASSWORD || localAuthConfig.password || "";
 const PUBLIC_ACCESS = process.env.PUBLIC_ACCESS === "1";
+const AUTH_ENABLED = Boolean(APP_USERNAME && APP_PASSWORD);
+const sessions = new Map();
+const loginAttempts = new Map();
 const DRIVE_HOSTS = new Set([
   "drive.google.com",
   "drive.usercontent.google.com",
@@ -123,26 +129,97 @@ function timingSafeStringEqual(actual, expected) {
   return actualBuffer.length === expectedBuffer.length && crypto.timingSafeEqual(actualBuffer, expectedBuffer);
 }
 
-function isAuthorized(request) {
-  if (!APP_USERNAME && !APP_PASSWORD) return true;
-  const match = request.headers.authorization?.match(/^Basic ([A-Za-z0-9+/]+={0,2})$/i);
-  if (!match) return false;
-  const decoded = Buffer.from(match[1], "base64").toString("utf8");
-  const separator = decoded.indexOf(":");
-  if (separator < 0) return false;
-  return timingSafeStringEqual(decoded.slice(0, separator), APP_USERNAME)
-    && timingSafeStringEqual(decoded.slice(separator + 1), APP_PASSWORD);
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, char => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  })[char]);
 }
 
-function rejectUnauthorized(response) {
-  const body = Buffer.from("Требуется авторизация.");
-  response.writeHead(401, {
-    "WWW-Authenticate": 'Basic realm="Inspection AI", charset="UTF-8"',
-    "Content-Type": "text/plain; charset=utf-8",
+function sessionCookieOptions(request, value, maxAge) {
+  const forwardedHttps = request.socket.remoteAddress === "127.0.0.1"
+    && request.headers["x-forwarded-proto"]?.split(",")[0].trim().toLowerCase() === "https";
+  return [
+    `${SESSION_COOKIE}=${value}`,
+    "Path=/",
+    "HttpOnly",
+    "SameSite=Lax",
+    ...(request.socket.encrypted || forwardedHttps ? ["Secure"] : []),
+    `Max-Age=${maxAge}`,
+  ];
+}
+
+function getSessionId(request) {
+  const cookieHeader = request.headers.cookie || "";
+  const match = cookieHeader.split(";").map(value => value.trim())
+    .find(value => value.startsWith(`${SESSION_COOKIE}=`));
+  const sessionId = match?.slice(SESSION_COOKIE.length + 1);
+  return /^[a-f0-9]{64}$/.test(sessionId || "") ? sessionId : null;
+}
+
+function isAuthorized(request) {
+  if (!AUTH_ENABLED) return true;
+  const sessionId = getSessionId(request);
+  if (!sessionId) return false;
+  const expiresAt = sessions.get(sessionId);
+  if (!expiresAt || expiresAt <= Date.now()) {
+    sessions.delete(sessionId);
+    return false;
+  }
+  return true;
+}
+
+function isLoginRateLimited(request) {
+  const address = request.socket.remoteAddress || "unknown";
+  const attempt = loginAttempts.get(address);
+  if (!attempt || attempt.resetAt <= Date.now()) {
+    loginAttempts.delete(address);
+    return false;
+  }
+  return attempt.count >= 10;
+}
+
+function recordLoginFailure(request) {
+  const address = request.socket.remoteAddress || "unknown";
+  const now = Date.now();
+  const attempt = loginAttempts.get(address);
+  if (!attempt || attempt.resetAt <= now) {
+    loginAttempts.set(address, { count: 1, resetAt: now + 15 * 60 * 1000 });
+  } else {
+    attempt.count += 1;
+  }
+}
+
+function clearLoginFailures(request) {
+  loginAttempts.delete(request.socket.remoteAddress || "unknown");
+}
+
+function sendLoginPage(response, status = 200, message = "") {
+  const templatePath = path.join(ROOT, "templates", "login.html");
+  const html = fs.readFileSync(templatePath, "utf8")
+    .replace("{{ERROR_MESSAGE}}", message ? `<p class="login-error" role="alert">${escapeHtml(message)}</p>` : "");
+  const body = Buffer.from(html);
+  response.writeHead(status, {
+    "Content-Type": "text/html; charset=utf-8",
     "Content-Length": body.length,
     "Cache-Control": "no-store",
+    "X-Content-Type-Options": "nosniff",
   });
   response.end(body);
+}
+
+async function readLoginForm(request) {
+  const contentType = (request.headers["content-type"] || "").split(";")[0].trim().toLowerCase();
+  if (contentType !== "application/x-www-form-urlencoded") {
+    throw new Error("Неверный формат формы входа.");
+  }
+  const chunks = [];
+  let length = 0;
+  for await (const chunk of request) {
+    length += chunk.length;
+    if (length > MAX_LOGIN_BODY_BYTES) throw new Error("Форма входа слишком большая.");
+    chunks.push(chunk);
+  }
+  return new URLSearchParams(Buffer.concat(chunks).toString("utf8"));
 }
 
 function nowIso() {
@@ -929,13 +1006,82 @@ async function serveFile(response, baseDirectory, relativePath) {
 }
 
 async function handleRequest(request, response) {
-  if (!isAuthorized(request)) {
-    rejectUnauthorized(response);
-    return;
-  }
   const url = new URL(request.url, "http://localhost");
   const pathname = decodeURIComponent(url.pathname);
   const method = request.method;
+  if (method === "GET" && pathname === "/login") {
+    if (!AUTH_ENABLED || isAuthorized(request)) {
+      response.writeHead(303, { Location: "/", "Cache-Control": "no-store" });
+      response.end();
+    } else sendLoginPage(response);
+    return;
+  }
+  if (method === "POST" && pathname === "/login") {
+    if (!AUTH_ENABLED) {
+      response.writeHead(303, { Location: "/", "Cache-Control": "no-store" });
+      response.end();
+      return;
+    }
+    if (isLoginRateLimited(request)) {
+      sendLoginPage(response, 429, "Слишком много попыток. Попробуйте через 15 минут.");
+      return;
+    }
+    let form;
+    try {
+      form = await readLoginForm(request);
+    } catch (error) {
+      sendLoginPage(response, 400, error.message);
+      return;
+    }
+    const username = form.get("username") || "";
+    const password = form.get("password") || "";
+    if (
+      !timingSafeStringEqual(username, APP_USERNAME)
+      || !timingSafeStringEqual(password, APP_PASSWORD)
+    ) {
+      recordLoginFailure(request);
+      sendLoginPage(response, 401, "Неверный логин или пароль.");
+      return;
+    }
+    clearLoginFailures(request);
+    const now = Date.now();
+    for (const [id, expiresAt] of sessions) {
+      if (expiresAt <= now) sessions.delete(id);
+    }
+    const sessionId = crypto.randomBytes(32).toString("hex");
+    sessions.set(sessionId, now + SESSION_TTL_MS);
+    response.writeHead(303, {
+      Location: "/",
+      "Set-Cookie": sessionCookieOptions(request, sessionId, SESSION_TTL_MS / 1000).join("; "),
+      "Cache-Control": "no-store",
+    });
+    response.end();
+    return;
+  }
+  if (method === "POST" && pathname === "/logout") {
+    const sessionId = getSessionId(request);
+    if (sessionId) sessions.delete(sessionId);
+    response.writeHead(303, {
+      Location: "/login",
+      "Set-Cookie": sessionCookieOptions(request, "", 0).join("; "),
+      "Cache-Control": "no-store",
+    });
+    response.end();
+    return;
+  }
+  if (method === "GET" && pathname === "/static/login.css") {
+    await serveFile(response, path.join(ROOT, "static"), "login.css");
+    return;
+  }
+  if (!isAuthorized(request)) {
+    if (pathname.startsWith("/api/")) {
+      jsonResponse(response, 401, { error: "Требуется вход в систему." });
+    } else {
+      response.writeHead(303, { Location: "/login", "Cache-Control": "no-store" });
+      response.end();
+    }
+    return;
+  }
   if (method === "GET" && pathname === "/") {
     const html = await fsp.readFile(path.join(ROOT, "templates", "index.html"));
     response.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Content-Length": html.length });

@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f7fa">
+  <title>Вход · Inspection AI</title>
+  <link rel="stylesheet" href="/static/login.css">
+</head>
+<body>
+  <main class="login-shell">
+    <section class="login-card" aria-labelledby="login-title">
+      <div class="brand-mark" aria-hidden="true">◈</div>
+      <p class="login-eyebrow">ПАНЕЛЬ МОНИТОРИНГА</p>
+      <h1 id="login-title">Вход в Inspection AI</h1>
+      <p class="login-description">Введите учётные данные, чтобы продолжить.</p>
+      {{ERROR_MESSAGE}}
+      <form method="post" action="/login" class="login-form">
+        <label for="username">Логин</label>
+        <input id="username" name="username" type="text" autocomplete="username" required autofocus>
+        <label for="password">Пароль</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" required>
+        <button type="submit">Войти</button>
+      </form>
+      <p class="login-footer">Inspection AI · Контроль состояния</p>
+    </section>
+  </main>
+</body>
+</html>

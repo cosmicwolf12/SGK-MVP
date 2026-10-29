@@ -35,7 +35,10 @@
     <main class="main-area">
       <header class="topbar">
         <div class="breadcrumbs"><span>МОНИТОРИНГ</span><i>/</i><strong id="breadcrumb-current">СТАТИСТИКА</strong></div>
-        <div class="system-status"><span class="online-dot"></span>СИСТЕМА АКТИВНА</div>
+        <div class="topbar-actions">
+          <div class="system-status"><span class="online-dot"></span>СИСТЕМА АКТИВНА</div>
+          <form method="post" action="/logout"><button class="btn logout-button" type="submit">Выйти</button></form>
+        </div>
       </header>
       <div id="toast-region" class="toast-region" aria-live="polite"></div>
       <section id="page-content" class="page-content" aria-live="polite"></section>
