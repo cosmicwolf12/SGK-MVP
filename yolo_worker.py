@@ -10,6 +10,8 @@ from pathlib import Path
 import cv2
 from ultralytics import YOLO
 
+CLASS_NAME_ALIASES = {"несанкционированная свалка": "waste"}
+
 
 def emit(payload: dict) -> None:
     sys.stdout.write(json.dumps(payload, ensure_ascii=False) + "\n")
@@ -82,7 +84,7 @@ def main() -> int:
                 )
                 image_path = output_dir / image_rel
                 image_path.parent.mkdir(parents=True, exist_ok=True)
-                if not cv2.imwrite(str(image_path), result.plot()):
+                if not cv2.imwrite(str(image_path), result.plot(labels=False, conf=False)):
                     raise OSError(f"Не удалось сохранить кадр с детекцией: {image_path}")
                 names = result.names
                 for coords, score, class_id in zip(
@@ -95,8 +97,9 @@ def main() -> int:
                         if isinstance(names, dict)
                         else names[class_id]
                     )
+                    class_name = CLASS_NAME_ALIASES.get(str(class_name), str(class_name))
                     detections.append({
-                        "class_name": str(class_name),
+                        "class_name": class_name,
                         "confidence": float(score),
                         "x1": float(coords[0]),
                         "y1": float(coords[1]),

@@ -100,7 +100,7 @@ def main() -> None:
                 / f"frame_{source_frame_counts[source_key]:06d}.jpg"
             )
             frame_path.parent.mkdir(parents=True, exist_ok=True)
-            if not cv2.imwrite(str(frame_path), result.plot()):
+            if not cv2.imwrite(str(frame_path), result.plot(labels=False, conf=False)):
                 raise OSError(f"Не удалось сохранить кадр с детекцией: {frame_path}")
             detection_frames_count += 1
 
