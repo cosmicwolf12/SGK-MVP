@@ -3,6 +3,8 @@
 const NSPD_BASE_URL = "https://nspd.gov.ru";
 const NSPD_SEARCH_PATH = "/api/geoportal/v2/search/geoportal";
 const NSPD_PARCEL_WMS_PATH = "/api/aeggis/v3/36048/wms";
+const NSPD_BLOCKED_MESSAGE =
+  "НСПД заблокировал автоматический запрос (HTTP 403). Доступ к API ограничен защитой сервиса nspd.gov.ru.";
 const MAX_SEARCH_RESPONSE_BYTES = 5 * 1024 * 1024;
 const MAX_WMS_TILE_BYTES = 2 * 1024 * 1024;
 const MAX_WEB_MERCATOR = 20037508.342789244;
@@ -61,6 +63,7 @@ async function searchNspdFeatures(query, themeId = 1) {
     },
     signal: AbortSignal.timeout(15000),
   });
+  if (response.status === 403) throw new Error(NSPD_BLOCKED_MESSAGE);
   if (!response.ok) throw new Error(`НСПД ответил HTTP ${response.status}.`);
   const contentType = response.headers.get("content-type") || "";
   if (!contentType.toLowerCase().includes("application/json")) {
@@ -148,6 +151,7 @@ async function fetchNspdParcelTile(params) {
     },
     signal: AbortSignal.timeout(15000),
   });
+  if (response.status === 403) throw new Error(NSPD_BLOCKED_MESSAGE);
   if (!response.ok) throw new Error(`Кадастровый слой НСПД ответил HTTP ${response.status}.`);
   const contentType = response.headers.get("content-type") || "";
   if (!contentType.toLowerCase().includes("image/png")) {
