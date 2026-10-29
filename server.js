@@ -1058,7 +1058,7 @@ async function handleRequest(request, response) {
     response.end();
     return;
   }
-  if (method === "POST" && pathname === "/logout") {
+  if (["GET", "POST"].includes(method) && pathname === "/logout") {
     const sessionId = getSessionId(request);
     if (sessionId) sessions.delete(sessionId);
     response.writeHead(303, {

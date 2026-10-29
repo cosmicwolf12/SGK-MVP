@@ -194,3 +194,27 @@ test("logs out and invalidates the session cookie", async () => {
   });
   assert.equal(rejected.status, 401);
 });
+
+test("direct navigation to logout redirects to login and clears the session", async () => {
+  const login = await fetch(`${baseUrl}/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      username: "test-user",
+      password: "test-password-for-integration-tests",
+    }),
+    redirect: "manual",
+  });
+  const cookie = login.headers.get("set-cookie").split(";")[0];
+  const logout = await fetch(`${baseUrl}/logout`, {
+    headers: { Cookie: cookie },
+    redirect: "manual",
+  });
+  assert.equal(logout.status, 303);
+  assert.equal(logout.headers.get("location"), "/login");
+  assert.match(logout.headers.get("set-cookie"), /Max-Age=0/);
+  const rejected = await fetch(`${baseUrl}/api/dashboard`, {
+    headers: { Cookie: cookie },
+  });
+  assert.equal(rejected.status, 401);
+});
