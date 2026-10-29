@@ -68,6 +68,8 @@ const FONT_PATHS = [
   "C:\\Windows\\Fonts\\arial.ttf",
   "C:\\Windows\\Fonts\\segoeui.ttf",
   "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+  "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+  "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
 ];
 
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
