@@ -47,6 +47,7 @@ def main() -> int:
             "source": source,
             "conf": config["conf"],
             "imgsz": config["imgsz"],
+            "max_det": 100,
             "stream": True,
             "save": True,
             "project": str(output_dir.parent),
