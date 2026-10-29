@@ -5,8 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f6f8fb">
   <title>Inspection AI · Контроль состояния</title>
+  <link rel="stylesheet" href="/static/vendor/leaflet.css">
   <link rel="stylesheet" href="/static/style.css">
+  <script defer src="/static/vendor/leaflet.js"></script>
   <script defer src="/static/app.js"></script>
+  <script defer src="/static/cadastre.js"></script>
 </head>
 <body>
   <div class="app-shell">
@@ -17,7 +20,7 @@
       <div class="nav-caption">РАБОЧЕЕ ПРОСТРАНСТВО</div>
       <nav class="nav-list" aria-label="Основная навигация">
         <button class="nav-item active" data-page="statistics"><span class="nav-icon">▦</span>Статистика</button>
-        <button class="nav-item" data-page="map"><span class="nav-icon">⌖</span>Интерактивная карта</button>
+        <button class="nav-item" data-page="map"><span class="nav-icon">⌖</span>Кадастровая карта</button>
         <button class="nav-item" data-page="upload"><span class="nav-icon">⇧</span>Загрузка видео</button>
         <button class="nav-item" data-page="logs"><span class="nav-icon">≋</span>Логи обнаружения</button>
         <button class="nav-item" data-page="reports"><span class="nav-icon">▤</span>Отчёты</button>

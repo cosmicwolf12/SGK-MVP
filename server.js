@@ -15,6 +15,12 @@ const { pipeline } = require("node:stream/promises");
 const Busboy = require("busboy");
 const PDFDocument = require("pdfkit");
 const yauzl = require("yauzl");
+const {
+  fetchNspdParcelTile,
+  NspdInputError,
+  searchNspdFeatures,
+  validateSearchQuery,
+} = require("./nspd_client");
 
 const ROOT = __dirname;
 const DATA_DIR = path.resolve(process.env.INSPECTION_DATA_DIR || path.join(ROOT, "inspection_data"));
@@ -33,8 +39,19 @@ const MAX_ARCHIVE_UNPACKED_BYTES = 2 * 1024 * 1024 * 1024;
 const MAX_ARCHIVE_IMAGE_BYTES = 128 * 1024 * 1024;
 const MAX_ARCHIVE_IMAGES = 5000;
 const MAX_JSON_BYTES = 2 * 1024 * 1024;
-const APP_USERNAME = process.env.APP_USERNAME || "";
-const APP_PASSWORD = process.env.APP_PASSWORD || "";
+const LOCAL_AUTH_CONFIG_PATH = path.join(ROOT, ".auth.local.json");
+const localAuthConfig = fs.existsSync(LOCAL_AUTH_CONFIG_PATH)
+  ? JSON.parse(fs.readFileSync(LOCAL_AUTH_CONFIG_PATH, "utf8"))
+  : {};
+if (
+  !localAuthConfig || typeof localAuthConfig !== "object" || Array.isArray(localAuthConfig)
+  || (localAuthConfig.username !== undefined && typeof localAuthConfig.username !== "string")
+  || (localAuthConfig.password !== undefined && typeof localAuthConfig.password !== "string")
+) {
+  throw new Error(".auth.local.json должен содержать строки username и password.");
+}
+const APP_USERNAME = process.env.APP_USERNAME || localAuthConfig.username || "";
+const APP_PASSWORD = process.env.APP_PASSWORD || localAuthConfig.password || "";
 const PUBLIC_ACCESS = process.env.PUBLIC_ACCESS === "1";
 const DRIVE_HOSTS = new Set([
   "drive.google.com",
@@ -927,8 +944,57 @@ async function handleRequest(request, response) {
   }
   if (method === "GET" && pathname.startsWith("/static/")) {
     const name = pathname.slice("/static/".length);
-    if (!["app.js", "style.css"].includes(name)) return jsonResponse(response, 404, { error: "Файл не найден." });
-    await serveFile(response, path.join(ROOT, "static"), name);
+    if (["app.js", "cadastre.js", "style.css"].includes(name)) {
+      await serveFile(response, path.join(ROOT, "static"), name);
+      return;
+    }
+    const leafletAssets = new Map([
+      ["vendor/leaflet.js", "leaflet.js"],
+      ["vendor/leaflet.css", "leaflet.css"],
+      ["vendor/images/layers.png", "images/layers.png"],
+      ["vendor/images/layers-2x.png", "images/layers-2x.png"],
+      ["vendor/images/marker-icon.png", "images/marker-icon.png"],
+      ["vendor/images/marker-icon-2x.png", "images/marker-icon-2x.png"],
+      ["vendor/images/marker-shadow.png", "images/marker-shadow.png"],
+    ]);
+    const leafletAsset = leafletAssets.get(name);
+    if (!leafletAsset) return jsonResponse(response, 404, { error: "Файл не найден." });
+    await serveFile(response, path.join(ROOT, "node_modules", "leaflet", "dist"), leafletAsset);
+    return;
+  }
+  if (method === "GET" && pathname === "/api/cadastre/search") {
+    let query;
+    let themeId;
+    try {
+      query = validateSearchQuery(url.searchParams.get("query"));
+      themeId = Number(url.searchParams.get("themeId") || 1);
+      const featureCollection = await searchNspdFeatures(query, themeId);
+      jsonResponse(response, 200, featureCollection);
+    } catch (error) {
+      const invalidRequest = error instanceof NspdInputError;
+      if (!invalidRequest) console.error("NSPD cadastral search failed:", error);
+      jsonResponse(response, invalidRequest ? 400 : 502, {
+        error: invalidRequest ? error.message : `Не удалось получить данные из НСПД: ${error.message}`,
+      });
+    }
+    return;
+  }
+  if (method === "GET" && pathname === "/api/cadastre/wms") {
+    try {
+      const tile = await fetchNspdParcelTile(url.searchParams);
+      response.writeHead(200, {
+        "Content-Type": "image/png",
+        "Content-Length": tile.length,
+        "Cache-Control": "public, max-age=300",
+      });
+      response.end(tile);
+    } catch (error) {
+      const invalidRequest = error instanceof NspdInputError;
+      if (!invalidRequest) console.error("NSPD cadastral WMS request failed:", error);
+      jsonResponse(response, invalidRequest ? 400 : 502, {
+        error: invalidRequest ? error.message : `Не удалось загрузить кадастровый слой НСПД: ${error.message}`,
+      });
+    }
     return;
   }
   if (method === "GET" && pathname === "/api/dashboard") {

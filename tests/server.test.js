@@ -83,6 +83,8 @@ test("serves the existing website and frontend assets", async () => {
   assert.equal(page.status, 200);
   const html = await page.text();
   assert.match(html, /\/static\/app\.js/);
+  assert.match(html, /Кадастровая карта/);
+  assert.match(html, /\/static\/vendor\/leaflet\.css/);
   assert.doesNotMatch(html, /url_for/);
   assert.match(html, /href="http:\/\/127\.0\.0\.1:8501"/);
   assert.match(html, /Дообучение модели/);
@@ -93,6 +95,24 @@ test("serves the existing website and frontend assets", async () => {
 
   const styles = await fetchAuthorized(`${baseUrl}/static/style.css`);
   assert.equal(styles.status, 200);
+
+  const cadastre = await fetchAuthorized(`${baseUrl}/static/cadastre.js`);
+  assert.equal(cadastre.status, 200);
+  assert.match(await cadastre.text(), /renderCadastreMap/);
+
+  for (const asset of ["leaflet.js", "leaflet.css", "images/marker-icon.png"]) {
+    const response = await fetchAuthorized(`${baseUrl}/static/vendor/${asset}`);
+    assert.equal(response.status, 200, `expected Leaflet asset ${asset}`);
+  }
+});
+
+test("validates NSPD proxy inputs without making upstream requests", async () => {
+  const invalidSearch = await fetchAuthorized(`${baseUrl}/api/cadastre/search`);
+  assert.equal(invalidSearch.status, 400);
+  assert.match((await invalidSearch.json()).error, /Укажите кадастровый номер или адрес/);
+
+  const invalidWms = await fetchAuthorized(`${baseUrl}/api/cadastre/wms`);
+  assert.equal(invalidWms.status, 400);
 });
 
 test("exposes dashboard, analysis, log and report APIs", async () => {

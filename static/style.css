@@ -133,6 +133,32 @@ td strong { color: var(--ink); font-weight: 700; }
 .log-message { font-size: 10px; }
 .log-source { color: var(--muted); font-size: 9px; }
 .map-layout { display: grid; grid-template-columns: minmax(0,1.4fr) minmax(270px,.8fr); gap: 14px; }
+.cadastre-card { padding: 14px; }
+.cadastre-search { display: grid; gap: 8px; }
+.cadastre-query-label { color: #596980; font-size: 10px; font-weight: 800; }
+.cadastre-search-row { display: grid; grid-template-columns: minmax(220px,1fr) minmax(190px,.5fr) auto; gap: 8px; }
+.cadastre-search-row input, .cadastre-search-row select { min-width: 0; border: 1px solid var(--line); border-radius: 6px; padding: 9px 11px; background: #fff; color: var(--ink); font-size: 11px; }
+.cadastre-search-row button:disabled { opacity: .6; cursor: wait; }
+.cadastre-status { min-height: 34px; display: flex; align-items: center; margin: 8px 0; color: var(--muted); font-size: 10px; }
+.cadastre-layout { display: grid; grid-template-columns: minmax(0,1fr) 300px; gap: 12px; }
+.cadastre-map { min-width: 0; height: min(68vh,720px); min-height: 440px; overflow: hidden; border: 1px solid var(--line); border-radius: 8px; background: #e9eef2; }
+.cadastre-sidebar { min-width: 0; max-height: min(68vh,720px); min-height: 440px; display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+.cadastre-results-heading { display: flex; justify-content: space-between; align-items: center; padding: 12px; border-bottom: 1px solid var(--line); font-size: 10px; }
+.cadastre-results-heading span { min-width: 22px; padding: 3px 6px; border-radius: 10px; color: #3159aa; background: #eef3ff; text-align: center; font: 700 10px "DM Mono",monospace; }
+.cadastre-results { max-height: 40%; overflow: auto; border-bottom: 1px solid var(--line); }
+.cadastre-result { width: 100%; display: grid; gap: 4px; padding: 10px 12px; border: 0; border-bottom: 1px solid #edf0f4; background: #fff; color: var(--ink); text-align: left; cursor: pointer; }
+.cadastre-result:hover { background: #f4f7ff; }
+.cadastre-result strong { overflow-wrap: anywhere; font-size: 10px; }
+.cadastre-result span { color: var(--muted); font-size: 9px; }
+.cadastre-object { overflow: auto; padding: 12px; }
+.cadastre-object-title { margin-bottom: 9px; overflow-wrap: anywhere; font-size: 11px; font-weight: 800; }
+.cadastre-detail { display: grid; gap: 3px; padding: 7px 0; border-bottom: 1px solid #edf0f4; }
+.cadastre-detail span { color: var(--muted); font-size: 9px; }
+.cadastre-detail strong { overflow-wrap: anywhere; font-size: 10px; font-weight: 600; }
+.cadastre-attribution-note { padding: 10px 2px 0; color: var(--muted); font-size: 9px; line-height: 1.6; }
+.cadastre-map .leaflet-container { font: inherit; }
+.cadastre-map .leaflet-control-attribution { font-size: 9px; }
+.cadastre-map .leaflet-popup-content { font-size: 10px; }
 .drone-card { margin-bottom: 16px; }
 .drone-card .section-title { margin-bottom: 12px; }
 .drone-layout { display: grid; grid-template-columns: minmax(0,1.65fr) minmax(230px,.75fr); gap: 17px; align-items: start; }
@@ -191,7 +217,9 @@ td strong { color: var(--ink); font-weight: 700; }
   .sidebar-bottom { justify-content: center; padding-inline: 0; }
   .main-area { margin-left: 62px; }
   .stats-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
-  .upload-layout, .two-col, .map-layout, .drone-layout { grid-template-columns: 1fr; }
+  .upload-layout, .two-col, .map-layout, .drone-layout, .cadastre-layout { grid-template-columns: 1fr; }
+  .cadastre-map { height: 58vh; min-height: 380px; }
+  .cadastre-sidebar { max-height: none; min-height: 240px; }
 }
 @media (max-width: 620px) {
   .topbar { padding: 0 13px; }
@@ -204,6 +232,7 @@ td strong { color: var(--ink); font-weight: 700; }
   .log-row { grid-template-columns: 1fr auto; }
   .log-message { grid-column: 1/-1; grid-row: 2; }
   .log-source { display: none; }
+  .cadastre-search-row { grid-template-columns: 1fr; }
   .form-grid { grid-template-columns: 1fr; }
   .full-width { grid-column: auto; }
 }

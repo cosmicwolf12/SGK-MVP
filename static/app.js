@@ -3,11 +3,11 @@ const breadcrumb = document.querySelector("#breadcrumb-current");
 const toastRegion = document.querySelector("#toast-region");
 const state = {
   page: "statistics", selectedFiles: [], pollTimer: null,
-  droneFrame: null, droneElapsed: 0, droneLastTimestamp: null, droneIsRunning: false,
+  cadastreMap: null,
 };
 const pageNames = {
   statistics: "СТАТИСТИКА",
-  map: "ИНТЕРАКТИВНАЯ КАРТА",
+  map: "КАДАСТРОВАЯ КАРТА",
   upload: "ЗАГРУЗКА ВИДЕО",
   logs: "ЛОГИ ОБНАРУЖЕНИЯ",
   reports: "ОТЧЁТЫ",
@@ -36,7 +36,10 @@ function toast(message, kind = "success") {
 }
 
 function setPage(page) {
-  stopDroneSimulation();
+  if (state.cadastreMap) {
+    state.cadastreMap.remove();
+    state.cadastreMap = null;
+  }
   state.page = page;
   document.querySelectorAll(".nav-item").forEach(button => {
     button.classList.toggle("active", button.dataset.page === page);
@@ -450,170 +453,7 @@ function filterAnalyses() {
 }
 
 async function renderMap() {
-  const analyses = await api("/api/analyses");
-  const ready = analyses.filter(item => item.status === "completed" && item.detection_frame_count);
-  content.innerHTML = `
-    ${heading("Интерактивная карта", "Тестовая симуляция облёта зоны дроном. Геоданные пока не используются.")}
-    <div class="card card-pad drone-card">
-      <div class="section-title"><div><h2>Демонстрационный полёт</h2><small>Схема зоны · условные координаты · не GPS</small></div><span id="drone-status" class="badge badge-green">ПОЛЁТ ИДЁТ</span></div>
-      <div class="drone-layout">
-        <div>
-          <div class="drone-map-wrap">
-            <svg id="drone-map" class="drone-map" viewBox="0 0 900 520" role="img" aria-label="Симуляция движения дрона по тестовой зоне">
-              <defs>
-                <pattern id="drone-grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M 40 0 L 0 0 0 40" fill="none" stroke="#e6ebef" stroke-width="1"/></pattern>
-                <pattern id="zone-pattern" width="12" height="12" patternUnits="userSpaceOnUse" patternTransform="rotate(35)"><rect width="12" height="12" fill="#e7f4ec"/><path d="M 0 0 L 0 12" stroke="#d7eadd" stroke-width="3"/></pattern>
-                <filter id="drone-shadow" x="-100%" y="-100%" width="300%" height="300%"><feDropShadow dx="0" dy="3" stdDeviation="3" flood-color="#172236" flood-opacity=".25"/></filter>
-              </defs>
-              <rect width="900" height="520" rx="10" fill="#f8faf9"/>
-              <rect width="900" height="520" rx="10" fill="url(#drone-grid)"/>
-              <path d="M94 87 L762 65 L824 420 L143 465 Z" fill="url(#zone-pattern)" stroke="#63a27a" stroke-width="2" stroke-dasharray="7 6"/>
-              <path d="M106 130 C220 104 230 145 340 124 S530 112 630 129 M164 395 C278 365 340 408 450 386 S638 380 782 400" fill="none" stroke="#d5ded7" stroke-width="16" stroke-linecap="round"/>
-              <path d="M106 130 C220 104 230 145 340 124 S530 112 630 129 M164 395 C278 365 340 408 450 386 S638 380 782 400" fill="none" stroke="#fff" stroke-width="2" stroke-dasharray="8 8"/>
-              <text x="115" y="105" class="drone-svg-label">ЗОНА A · ТЕСТОВАЯ</text>
-              <text x="655" y="100" class="drone-svg-small">граница зоны</text>
-              <circle cx="111" cy="132" r="8" fill="#fff" stroke="#3469e8" stroke-width="3"/>
-              <text x="92" y="158" class="drone-svg-small">СТАРТ / БАЗА</text>
-              <path id="drone-route" d="M111 132 L733 110 L748 178 L174 204 L190 270 L768 246 L780 312 L202 340 L218 407 L790 383 L111 132" fill="none" stroke="#3469e8" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="7 8" opacity=".6"/>
-              <path id="drone-trail" d="M111 132 L733 110 L748 178 L174 204 L190 270 L768 246 L780 312 L202 340 L218 407 L790 383 L111 132" fill="none" stroke="#3469e8" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
-              <g id="drone-marker" filter="url(#drone-shadow)" transform="translate(111 132)">
-                <circle r="17" fill="#3469e8" opacity=".16"/>
-                <path d="M0 -13 L10 10 L0 6 L-10 10 Z" fill="#244fb5" stroke="#fff" stroke-width="2"/>
-                <circle r="2.5" fill="#fff"/>
-              </g>
-              <g transform="translate(680 450)"><path d="M0 0 L0 -32 M-5 -20 L0 -32 L5 -20" fill="none" stroke="#65758b" stroke-width="2"/><text x="-4" y="14" class="drone-svg-small">N</text></g>
-              <text x="24" y="493" class="drone-svg-small">Схема полёта условная — для демонстрации интерфейса</text>
-            </svg>
-          </div>
-          <div class="drone-controls">
-            <button class="btn btn-primary" id="drone-toggle">Ⅱ Пауза</button>
-            <button class="btn" id="drone-reset">↺ Сначала</button>
-            <div class="drone-progress"><div class="drone-progress-label"><span>Облёт зоны</span><strong id="drone-progress-text">0%</strong></div><div class="drone-progress-track"><div id="drone-progress-bar"></div></div></div>
-          </div>
-        </div>
-        <div class="drone-side">
-          <div class="drone-metrics">
-            <div class="drone-metric"><span>Время полёта</span><strong id="drone-time">00:00</strong></div>
-            <div class="drone-metric"><span>Скорость</span><strong>4.5 м/с</strong></div>
-            <div class="drone-metric"><span>Высота</span><strong>35 м</strong></div>
-            <div class="drone-metric"><span>Покрытие зоны</span><strong id="drone-coverage">0%</strong></div>
-          </div>
-          <div class="drone-position"><span>Условная позиция · локальная сетка</span><strong id="drone-position">X 02 · Y 08</strong></div>
-          <div class="drone-disclaimer">Это демонстрационная анимация, а не управление реальным дроном. Координаты, скорость, высота и маршрут условные и не являются GPS/телеметрией.</div>
-          <div class="drone-waypoints">
-            <div><i class="waypoint-dot active"></i><span><strong>Точка старта</strong><small>База · условная координата</small></span></div>
-            <div><i class="waypoint-dot"></i><span><strong>Линии облёта</strong><small>Зигзагообразное покрытие зоны</small></span></div>
-            <div><i class="waypoint-dot"></i><span><strong>Возврат на базу</strong><small>По окончании маршрута</small></span></div>
-          </div>
-        </div>
-      </div>
-    </div>
-    <div class="map-layout">
-      <div class="card card-pad"><div class="section-title"><h2>Карта кадра</h2><select id="map-analysis" class="filter-row">${ready.map(item => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.source_name)}</option>`).join("")}</select></div>
-        <div id="map-frame" class="frame-map">${ready.length ? `<div class="loading">Загружаю кадры…</div>` : `<div class="empty-state">Детекций для отображения пока нет.<br>Сначала загрузите и проанализируйте фотографию или видео.</div>`}</div>
-      </div>
-      <div class="card card-pad"><div class="section-title"><h2>Объекты выбранного материала</h2></div><div id="map-detections" class="defect-list"><div class="empty-inline">Выберите анализ.</div></div>
-        <div style="margin-top:14px;color:var(--muted);font-size:9px;line-height:1.7">Модель сохраняет координаты рамки (X1, Y1, X2, Y2) в пикселях кадра. GPS-координаты не добавляются, если их нет в исходных данных.</div>
-      </div>
-    </div>`;
-  const select = document.querySelector("#map-analysis");
-  if (select && ready.length) {
-    select.addEventListener("change", () => loadMapAnalysis(select.value));
-    await loadMapAnalysis(select.value);
-  }
-  bindDroneSimulation();
-}
-
-async function loadMapAnalysis(id) {
-  const data = await api(`/api/analyses/${encodeURIComponent(id)}`);
-  const unique = data.detections.filter((item,index,array) => array.findIndex(other => other.image_rel === item.image_rel) === index);
-  document.querySelector("#map-frame").innerHTML = unique.length ? `<div class="image-grid" style="width:100%;padding:12px">${unique.map(item => `<div class="image-tile" data-preview="${fileUrl(id,item.image_rel)}"><img loading="lazy" src="${fileUrl(id,item.image_rel)}" alt=""><div class="image-tile-info"><strong>Кадр ${item.frame_index}</strong>${escapeHtml(item.class_name)} · ${Math.round(item.x1)},${Math.round(item.y1)}–${Math.round(item.x2)},${Math.round(item.y2)}</div></div>`).join("")}</div>` : `<div class="empty-state">Кадры с детекциями не найдены.</div>`;
-  const side = document.querySelector("#map-detections");
-  side.innerHTML = data.detections.length ? data.detections.slice(0,15).map(defectCard).join("") : `<div class="empty-inline">В выбранном материале детекций нет.</div>`;
-  document.querySelectorAll("#map-frame [data-preview]").forEach(element => element.addEventListener("click", () => showImage(element.dataset.preview)));
-}
-
-const DRONE_ROUTE_SECONDS = 48;
-
-function stopDroneSimulation() {
-  if (state.droneFrame !== null) cancelAnimationFrame(state.droneFrame);
-  state.droneFrame = null;
-  state.droneIsRunning = false;
-  state.droneLastTimestamp = null;
-}
-
-function bindDroneSimulation() {
-  const map = document.querySelector("#drone-map");
-  const route = document.querySelector("#drone-route");
-  const marker = document.querySelector("#drone-marker");
-  const trail = document.querySelector("#drone-trail");
-  const toggle = document.querySelector("#drone-toggle");
-  const reset = document.querySelector("#drone-reset");
-  const length = route.getTotalLength();
-  trail.style.strokeDasharray = `${length} ${length}`;
-  trail.style.strokeDashoffset = String(length);
-  state.droneElapsed = 0;
-
-  const update = timestamp => {
-    if (!state.droneIsRunning || !map.isConnected) return;
-    if (state.droneLastTimestamp !== null) {
-      state.droneElapsed += (timestamp - state.droneLastTimestamp) / 1000;
-    }
-    state.droneLastTimestamp = timestamp;
-    const progress = Math.min(state.droneElapsed / DRONE_ROUTE_SECONDS, 1);
-    const point = route.getPointAtLength(length * progress);
-    const next = route.getPointAtLength(Math.min(length, length * progress + 2));
-    const angle = Math.atan2(next.y - point.y, next.x - point.x) * 180 / Math.PI + 90;
-    marker.setAttribute("transform", `translate(${point.x} ${point.y}) rotate(${angle})`);
-    trail.style.strokeDashoffset = String(length * (1 - progress));
-    document.querySelector("#drone-progress-bar").style.width = `${progress * 100}%`;
-    document.querySelector("#drone-progress-text").textContent = `${Math.round(progress * 100)}%`;
-    document.querySelector("#drone-coverage").textContent = `${Math.round(progress * 100)}%`;
-    document.querySelector("#drone-time").textContent = `00:${String(Math.floor(state.droneElapsed)).padStart(2, "0")}`;
-    document.querySelector("#drone-position").textContent =
-      `X ${String(Math.round((point.x - 90) / 10.5)).padStart(2, "0")} · Y ${String(Math.round((point.y - 50) / 10.25)).padStart(2, "0")}`;
-    if (progress >= 1) {
-      state.droneIsRunning = false;
-      state.droneFrame = null;
-      toggle.textContent = "▶ Повторить полёт";
-      document.querySelector("#drone-status").textContent = "МАРШРУТ ЗАВЕРШЁН";
-      return;
-    }
-    state.droneFrame = requestAnimationFrame(update);
-  };
-  const start = () => {
-    if (state.droneIsRunning) return;
-    if (state.droneElapsed >= DRONE_ROUTE_SECONDS) state.droneElapsed = 0;
-    state.droneIsRunning = true;
-    state.droneLastTimestamp = null;
-    toggle.textContent = "Ⅱ Пауза";
-    document.querySelector("#drone-status").textContent = "ПОЛЁТ ИДЁТ";
-    state.droneFrame = requestAnimationFrame(update);
-  };
-  const pause = () => {
-    state.droneIsRunning = false;
-    state.droneLastTimestamp = null;
-    if (state.droneFrame !== null) cancelAnimationFrame(state.droneFrame);
-    state.droneFrame = null;
-    toggle.textContent = "▶ Продолжить";
-    document.querySelector("#drone-status").textContent = "ПАУЗА";
-  };
-
-  toggle.addEventListener("click", () => state.droneIsRunning ? pause() : start());
-  reset.addEventListener("click", () => {
-    pause();
-    state.droneElapsed = 0;
-    marker.setAttribute("transform", "translate(111 132)");
-    trail.style.strokeDashoffset = String(length);
-    document.querySelector("#drone-progress-bar").style.width = "0%";
-    document.querySelector("#drone-progress-text").textContent = "0%";
-    document.querySelector("#drone-coverage").textContent = "0%";
-    document.querySelector("#drone-time").textContent = "00:00";
-    document.querySelector("#drone-position").textContent = "X 02 · Y 08";
-    toggle.textContent = "▶ Запустить полёт";
-    document.querySelector("#drone-status").textContent = "ГОТОВ К ПОЛЁТУ";
-  });
-  start();
+  return window.renderCadastreMap();
 }
 
 async function renderPage() {
