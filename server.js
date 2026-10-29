@@ -104,6 +104,16 @@ db.exec(`
   );
 `);
 
+async function moveFile(from, to) {
+  try {
+    await fsp.rename(from, to);
+  } catch (error) {
+    if (error.code !== "EXDEV") throw error;
+    await fsp.copyFile(from, to);
+    await fsp.unlink(from);
+  }
+}
+
 function ensureColumn(table, column, definition) {
   const columns = db.prepare(`PRAGMA table_info(${table})`).all().map(row => row.name);
   if (!columns.includes(column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
@@ -1166,7 +1176,7 @@ async function handleRequest(request, response) {
         const folder = path.join(UPLOAD_DIR, id);
         await fsp.mkdir(folder, { recursive: true });
         const sourcePath = path.join(folder, file.filename);
-        await fsp.rename(file.path, sourcePath);
+        await moveFile(file.path, sourcePath);
         let kind;
         let source = sourcePath;
         let sourceFileCount = 1;
