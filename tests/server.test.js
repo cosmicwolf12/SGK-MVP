@@ -119,7 +119,7 @@ test("serves the existing website and frontend assets", async () => {
   assert.match(html, /Кадастровая карта/);
   assert.match(html, /\/static\/vendor\/leaflet\.css/);
   assert.doesNotMatch(html, /url_for/);
-  assert.match(html, /href="http:\/\/127\.0\.0\.1:8501"/);
+  assert.match(html, /href="\/training\/"/);
   assert.match(html, /Дообучение модели/);
 
   const script = await fetchAuthorized(`${baseUrl}/static/app.js`);
@@ -179,6 +179,13 @@ test("requires a media file for upload", async () => {
   const response = await fetchAuthorized(`${baseUrl}/api/analyses`, { method: "POST", body: form });
   assert.equal(response.status, 400);
   assert.match((await response.json()).error, /Выберите хотя бы одно фото или видео/);
+});
+
+test("auth-check returns 204 with a session and 401 without", async () => {
+  const allowed = await fetchAuthorized(`${baseUrl}/auth-check`);
+  assert.equal(allowed.status, 204);
+  const denied = await fetch(`${baseUrl}/auth-check`, { redirect: "manual" });
+  assert.equal(denied.status, 401);
 });
 
 test("logs out and invalidates the session cookie", async () => {

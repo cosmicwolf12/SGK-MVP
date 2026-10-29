@@ -1084,12 +1084,23 @@ async function handleRequest(request, response) {
     return;
   }
   if (!isAuthorized(request)) {
-    if (pathname.startsWith("/api/")) {
+    if (pathname.startsWith("/api/") || pathname === "/auth-check") {
       jsonResponse(response, 401, { error: "Требуется вход в систему." });
     } else {
       response.writeHead(303, { Location: "/login", "Cache-Control": "no-store" });
       response.end();
     }
+    return;
+  }
+  if (method === "GET" && pathname === "/auth-check") {
+    response.writeHead(204, { "Cache-Control": "no-store" });
+    response.end();
+    return;
+  }
+  if (method === "GET" && (pathname === "/training" || pathname === "/training/")) {
+    // Behind nginx /training/ is proxied to Streamlit; locally fall back to its own port.
+    response.writeHead(302, { Location: "http://127.0.0.1:8501", "Cache-Control": "no-store" });
+    response.end();
     return;
   }
   if (method === "GET" && pathname === "/") {
