@@ -12,6 +12,27 @@ const CADASTRE_TITLES = {
   utilization: "Вид использования",
 };
 
+const NSPD_WMS_URL = "https://nspd.gov.ru/api/aeggis/v3/36048/wms";
+const NSPD_SEARCH_URL = "https://nspd.gov.ru/api/geoportal/v2/search/geoportal";
+
+// The NSPD firewall blocks server-side requests, so the browser asks NSPD directly;
+// the server proxy is only a fallback when the browser request is rejected (e.g. by CORS).
+async function searchCadastre(query, themeId) {
+  try {
+    const url = `${NSPD_SEARCH_URL}?${new URLSearchParams({ query, thematicSearchId: themeId, CRS: "EPSG:4326" })}`;
+    const response = await fetch(url, { headers: { Accept: "application/json" }, credentials: "omit" });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const payload = await response.json();
+    if (!Array.isArray(payload?.data?.features)) throw new Error("bad payload");
+    return {
+      type: "FeatureCollection",
+      features: payload.data.features.filter(item => item && item.type === "Feature" && item.properties),
+    };
+  } catch {
+    return api(`/api/cadastre/search?${new URLSearchParams({ query, themeId })}`);
+  }
+}
+
 function cadastralProperties(feature) {
   const properties = feature?.properties || {};
   return properties.options && typeof properties.options === "object"
@@ -94,7 +115,7 @@ async function renderCadastreMap() {
     maxZoom: 19,
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a>',
   }).addTo(map);
-  const parcelLayer = window.L.tileLayer.wms("/api/cadastre/wms", {
+  const parcelLayer = window.L.tileLayer.wms(NSPD_WMS_URL, {
     layers: "36048",
     format: "image/png",
     transparent: true,
@@ -154,7 +175,7 @@ async function renderCadastreMap() {
     resultCount.textContent = "…";
     try {
       const themeId = Number(document.querySelector("#cadastre-theme").value);
-      const collection = await api(`/api/cadastre/search?${new URLSearchParams({ query, themeId })}`);
+      const collection = await searchCadastre(query, themeId);
       features = collection.features;
       if (resultsLayer) map.removeLayer(resultsLayer);
       resultsLayer = window.L.geoJSON(features, {
